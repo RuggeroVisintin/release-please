@@ -1,0 +1,65 @@
+name: Sync with Upstream
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly Monday 2 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync main with upstream
+        run: |
+          git remote add upstream https://github.com/googleapis/release-please.git
+          git fetch upstream main
+          
+          # Try to rebase main onto upstream/main
+          if ! git rebase upstream/main main; then
+            echo "Rebase conflict detected!"
+            git rebase --abort
+            
+            # Create conflict branch for manual resolution
+            BRANCH_NAME="sync-conflict-$(date +%Y%m%d-%H%M%S)"
+            git checkout -b "$BRANCH_NAME"
+            
+            # Attempt rebase again on the conflict branch for reference
+            git rebase upstream/main || true
+            
+            git push origin "$BRANCH_NAME"
+            echo "conflict_branch=$BRANCH_NAME" >> $GITHUB_ENV
+            exit 1
+          fi
+          
+          git push origin main
+
+      - name: Create issue on conflict
+        if: failure()
+        uses: actions/create-issue@v2
+        with:
+          title: "⚠️ Upstream sync conflict detected"
+          body: |
+            A rebase conflict occurred while syncing with upstream.
+            
+            **Branch with conflict:** `${{ env.conflict_branch }}`
+            
+            Please resolve the conflict manually:
+            1. Check out the conflict branch: `git checkout ${{ env.conflict_branch }}`
+            2. Resolve conflicts in your editor
+            3. Complete the rebase: `git rebase --continue`
+            4. Push and merge back to main: `git push origin ${{ env.conflict_branch }}`
+            5. Create a PR to merge this branch into main
+            
+            After resolving, you can delete the conflict branch.

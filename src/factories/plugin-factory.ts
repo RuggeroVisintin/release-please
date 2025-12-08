@@ -19,18 +19,19 @@ import {
   SentenceCasePluginConfig,
   GroupPriorityPluginConfig,
 } from '../manifest';
-import {GitHub} from '../github';
-import {ManifestPlugin} from '../plugin';
-import {LinkedVersions} from '../plugins/linked-versions';
-import {CargoWorkspace} from '../plugins/cargo-workspace';
-import {NodeWorkspace} from '../plugins/node-workspace';
-import {VersioningStrategyType} from './versioning-strategy-factory';
-import {MavenWorkspace} from '../plugins/maven-workspace';
-import {ConfigurationError} from '../errors';
-import {SentenceCase} from '../plugins/sentence-case';
-import {GroupPriority} from '../plugins/group-priority';
-import {Logger} from '../util/logger';
-import {WorkspacePluginOptions} from '../plugins/workspace';
+import { GitHub } from '../github';
+import { ManifestPlugin } from '../plugin';
+import { LinkedVersions } from '../plugins/linked-versions';
+import { CargoWorkspace } from '../plugins/cargo-workspace';
+import { NodeWorkspace } from '../plugins/node-workspace';
+import { VersioningStrategyType } from './versioning-strategy-factory';
+import { MavenWorkspace } from '../plugins/maven-workspace';
+import { ConfigurationError } from '../errors';
+import { SentenceCase } from '../plugins/sentence-case';
+import { GroupPriority } from '../plugins/group-priority';
+import { Logger } from '../util/logger';
+import { WorkspacePluginOptions } from '../plugins/workspace';
+import { FeatureFlagPlugin } from '../plugins/feature-flags';
 
 export interface PluginFactoryOptions {
   type: PluginType;
@@ -120,6 +121,12 @@ const pluginFactories: Record<string, PluginBuilder> = {
       options.targetBranch,
       options.repositoryConfig,
       (options.type as GroupPriorityPluginConfig).groups
+    ),
+  'feature-flags': options =>
+    new FeatureFlagPlugin(
+      options.github,
+      options.targetBranch,
+      options.repositoryConfig
     ),
 };
 
