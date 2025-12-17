@@ -46,59 +46,18 @@ export class FeatureFlagPlugin extends ManifestPlugin {
   }
 
   /**
-   * Filter commits based on feature flags before they're used for changelog generation
+   * Process commits to filter based on feature flags
    */
-  async preconfigure(
-    strategiesByPath: Record<string, any>,
-    commitsByPath: Record<string, Commit[]>,
-    _releasesByPath: Record<string, any>
-  ): Promise<Record<string, any>> {
-    // Find newly enabled flags (enabled now but weren't before)
-    const newlyEnabledFlags = Array.from(this.enabledFlags).filter(
-      flag => !this.previouslyEnabledFlags.has(flag)
+  processCommits(commits: any[]): any[] {
+    const filtered = commits.filter(commit => {
+      return this.shouldIncludeCommit(commit);
+    });
+
+    console.log(
+      `[FeatureFlagPlugin] Filtered ${commits.length} commits down to ${filtered.length}`
     );
 
-    // Filter commits for each path
-    const filteredCommitsByPath: Record<string, Commit[]> = {};
-
-    for (const [path, commits] of Object.entries(commitsByPath)) {
-      const filteredCommits = commits.filter(commit => {
-        return this.shouldIncludeCommit(commit);
-      });
-
-      // If any flags were newly enabled, find their historical commits
-      if (newlyEnabledFlags.length > 0) {
-        console.log(
-          `[FeatureFlagPlugin] Newly enabled flags: ${newlyEnabledFlags.join(
-            ', '
-          )}`
-        );
-        const historicalCommits = this.findHistoricalCommits(newlyEnabledFlags);
-
-        // Add historical commits, avoiding duplicates
-        const existingShas = new Set(filteredCommits.map(c => c.sha));
-        for (const commit of historicalCommits) {
-          if (!existingShas.has(commit.sha)) {
-            filteredCommits.push(commit);
-          }
-        }
-      }
-
-      filteredCommitsByPath[path] = filteredCommits;
-    }
-
-    // Return strategies with filtered commits injected
-    // The release-please API expects us to return updated strategies
-    const updatedStrategies: Record<string, any> = {};
-    for (const [path, strategy] of Object.entries(strategiesByPath)) {
-      updatedStrategies[path] = strategy;
-      // Inject filtered commits into the strategy if possible
-      if (strategy && typeof strategy === 'object') {
-        (strategy as any)._commits = filteredCommitsByPath[path] || [];
-      }
-    }
-
-    return updatedStrategies;
+    return filtered;
   }
 
   /**
