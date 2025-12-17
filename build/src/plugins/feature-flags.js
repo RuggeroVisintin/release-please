@@ -36,14 +36,24 @@ class FeatureFlagPlugin extends plugin_1.ManifestPlugin {
         console.log(`[FeatureFlagPlugin] Initialized with enabled flags: ${Array.from(this.enabledFlags).join(', ') || 'none'}`);
     }
     /**
-     * Process commits to filter based on feature flags
+     * Filter commits before strategies use them for changelog generation
      */
-    processCommits(commits) {
-        const filtered = commits.filter(commit => {
-            return this.shouldIncludeCommit(commit);
-        });
-        console.log(`[FeatureFlagPlugin] Filtered ${commits.length} commits down to ${filtered.length}`);
-        return filtered;
+    async preconfigure(strategiesByPath, commitsByPath, _releasesByPath) {
+        // Filter commits for each path IN PLACE
+        for (const [path, commits] of Object.entries(commitsByPath)) {
+            const originalCount = commits.length;
+            // Filter the array in place
+            let writeIndex = 0;
+            for (let readIndex = 0; readIndex < commits.length; readIndex++) {
+                if (this.shouldIncludeCommit(commits[readIndex])) {
+                    commits[writeIndex] = commits[readIndex];
+                    writeIndex++;
+                }
+            }
+            commits.length = writeIndex;
+            console.log(`[FeatureFlagPlugin] Path ${path}: Filtered ${originalCount} commits down to ${commits.length}`);
+        }
+        return strategiesByPath;
     }
     /**
      * Find historical commits for newly enabled flags

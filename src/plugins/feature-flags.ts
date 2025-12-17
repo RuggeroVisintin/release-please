@@ -46,18 +46,33 @@ export class FeatureFlagPlugin extends ManifestPlugin {
   }
 
   /**
-   * Process commits to filter based on feature flags
+   * Filter commits before strategies use them for changelog generation
    */
-  processCommits(commits: any[]): any[] {
-    const filtered = commits.filter(commit => {
-      return this.shouldIncludeCommit(commit);
-    });
+  async preconfigure(
+    strategiesByPath: Record<string, any>,
+    commitsByPath: Record<string, Commit[]>,
+    _releasesByPath: Record<string, any>
+  ): Promise<Record<string, any>> {
+    // Filter commits for each path IN PLACE
+    for (const [path, commits] of Object.entries(commitsByPath)) {
+      const originalCount = commits.length;
 
-    console.log(
-      `[FeatureFlagPlugin] Filtered ${commits.length} commits down to ${filtered.length}`
-    );
+      // Filter the array in place
+      let writeIndex = 0;
+      for (let readIndex = 0; readIndex < commits.length; readIndex++) {
+        if (this.shouldIncludeCommit(commits[readIndex])) {
+          commits[writeIndex] = commits[readIndex];
+          writeIndex++;
+        }
+      }
+      commits.length = writeIndex;
 
-    return filtered;
+      console.log(
+        `[FeatureFlagPlugin] Path ${path}: Filtered ${originalCount} commits down to ${commits.length}`
+      );
+    }
+
+    return strategiesByPath;
   }
 
   /**
