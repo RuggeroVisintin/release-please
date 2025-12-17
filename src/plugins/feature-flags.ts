@@ -122,8 +122,13 @@ export class FeatureFlagPlugin extends ManifestPlugin {
             // Extract only sha, subject, and body; skip author name and email
             const parts = line.split('|');
             const sha = parts[0];
-            const subject = parts[1];
-            const body = parts[2];
+            const subject = parts[1] || '';
+            const body = parts[2] || '';
+
+            // Skip if we don't have the minimum required data
+            if (!sha || !subject) {
+              continue;
+            }
 
             // Reconstruct commit message
             const message = body ? `${subject}\n\n${body}` : subject;
