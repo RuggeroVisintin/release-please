@@ -118,16 +118,26 @@ class FeatureFlagPlugin extends plugin_1.ManifestPlugin {
      * Determine if a commit should be included based on its feature flag
      */
     shouldIncludeCommit(commit) {
-        var _a;
-        // Extract feature flag from commit message
-        const flagMatch = commit.message.match(/Feature-Flag:\s*(\w+)/i);
+        var _a, _b;
+        // Check for commit override in PR body first
+        let messageToCheck = commit.message;
+        if ((_a = commit.pullRequest) === null || _a === void 0 ? void 0 : _a.body) {
+            const overrideMessage = (commit.pullRequest.body.split('BEGIN_COMMIT_OVERRIDE')[1] || '')
+                .split('END_COMMIT_OVERRIDE')[0]
+                .trim();
+            if (overrideMessage) {
+                messageToCheck = overrideMessage;
+            }
+        }
+        // Extract feature flag from commit message or override
+        const flagMatch = messageToCheck.match(/Feature-Flag:\s*(\w+)/i);
         if (!flagMatch) {
             // No feature flag = always include
             return true;
         }
         const flag = flagMatch[1];
         const isEnabled = this.enabledFlags.has(flag);
-        console.log(`[FeatureFlagPlugin] Commit ${(_a = commit.sha) === null || _a === void 0 ? void 0 : _a.substring(0, 7)}: Feature-Flag=${flag}, enabled=${isEnabled}`);
+        console.log(`[FeatureFlagPlugin] Commit ${(_b = commit.sha) === null || _b === void 0 ? void 0 : _b.substring(0, 7)}: Feature-Flag=${flag}, enabled=${isEnabled}`);
         return isEnabled;
     }
 }

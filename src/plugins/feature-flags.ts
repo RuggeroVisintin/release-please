@@ -158,8 +158,23 @@ export class FeatureFlagPlugin extends ManifestPlugin {
    * Determine if a commit should be included based on its feature flag
    */
   private shouldIncludeCommit(commit: Commit): boolean {
-    // Extract feature flag from commit message
-    const flagMatch = commit.message.match(/Feature-Flag:\s*(\w+)/i);
+    // Check for commit override in PR body first
+    let messageToCheck = commit.message;
+    
+    if (commit.pullRequest?.body) {
+      const overrideMessage = (
+        commit.pullRequest.body.split('BEGIN_COMMIT_OVERRIDE')[1] || ''
+      )
+        .split('END_COMMIT_OVERRIDE')[0]
+        .trim();
+      
+      if (overrideMessage) {
+        messageToCheck = overrideMessage;
+      }
+    }
+
+    // Extract feature flag from commit message or override
+    const flagMatch = messageToCheck.match(/Feature-Flag:\s*(\w+)/i);
 
     if (!flagMatch) {
       // No feature flag = always include

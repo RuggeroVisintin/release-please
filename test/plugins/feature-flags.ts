@@ -136,7 +136,47 @@ describe('FeatureFlagPlugin', () => {
 
       assert.strictEqual(commitsByPath['.'].length, 3);
     });
-  });
+    it('should respect feature flags in PR commit overrides', async () => {
+      process.env.FEATURE_ENABLED = 'true';
+
+      const plugin = new FeatureFlagPlugin({} as any, 'main', {});
+
+      const commits: Commit[] = [
+        {
+          sha: 'abc',
+          message: 'Regular commit message',
+          files: [],
+          pullRequest: {
+            body: `Some PR description
+
+BEGIN_COMMIT_OVERRIDE
+feat: override with enabled flag
+
+Feature-Flag: FEATURE_ENABLED
+END_COMMIT_OVERRIDE`,
+          } as any,
+        } as Commit,
+        {
+          sha: 'def',
+          message: 'Another commit',
+          files: [],
+          pullRequest: {
+            body: `BEGIN_COMMIT_OVERRIDE
+feat: override with disabled flag
+
+Feature-Flag: FEATURE_DISABLED
+END_COMMIT_OVERRIDE`,
+          } as any,
+        } as Commit,
+      ];
+
+      const commitsByPath = {'.': commits};
+      await plugin.preconfigure({}, commitsByPath, {});
+
+      // Should keep enabled, filter disabled
+      assert.strictEqual(commitsByPath['.'].length, 1);
+      assert.strictEqual(commitsByPath['.'][0].sha, 'abc');
+    });  });
 
   describe('environment variable handling', () => {
     it('should only load FEATURE_* environment variables', async () => {
