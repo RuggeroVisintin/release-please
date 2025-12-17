@@ -122,7 +122,7 @@ const pluginFactories: Record<string, PluginBuilder> = {
       options.repositoryConfig,
       (options.type as GroupPriorityPluginConfig).groups
     ),
-  'feature-flags': options =>
+  'feature-flag-filter': options =>
     new FeatureFlagPlugin(
       options.github,
       options.targetBranch,
