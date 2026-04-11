@@ -303,41 +303,14 @@ export class FeatureFlagPlugin extends ManifestPlugin {
   private async findHistoricalOverridePullRequestCommits(
     flags: string[]
   ): Promise<Commit[]> {
-    const latestTag = this.getLatestTag();
-    if (!latestTag) {
-      return [];
-    }
-
     const flagSet = new Set(flags);
-    const commitsSinceLatestTag = new Set<string>();
-
-    try {
-      const revListOutput = execSync(`git rev-list ${latestTag}..HEAD`, {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'ignore'],
-      });
-
-      for (const sha of revListOutput
-        .split('\n')
-        .map(line => line.trim())
-        .filter(Boolean)) {
-        commitsSinceLatestTag.add(sha);
-      }
-    } catch {
-      return [];
-    }
-
     const commits: Commit[] = [];
 
     try {
-      for await (const pr of this.github.pullRequestIterator(
-        this.targetBranch,
-        'MERGED',
-        500,
-        false
-      )) {
+      const prs = await this.findMergedPullRequestsWithFeatureFlagBody(500);
+      for (const pr of prs) {
         const mergeSha = pr.mergeCommitOid || pr.sha;
-        if (!mergeSha || !commitsSinceLatestTag.has(mergeSha)) {
+        if (!mergeSha) {
           continue;
         }
 
@@ -388,6 +361,87 @@ export class FeatureFlagPlugin extends ManifestPlugin {
     }
 
     return commits;
+  }
+
+  /**
+   * Find merged pull requests that mention Feature-Flag in the PR body.
+   */
+  private async findMergedPullRequestsWithFeatureFlagBody(
+    maxResults: number
+  ): Promise<any[]> {
+    const github = this.github as any;
+    const owner = github?.repository?.owner;
+    const repo = github?.repository?.repo;
+    const octokit = github?.octokit;
+
+    if (!owner || !repo || !octokit) {
+      return this.findMergedPullRequestsWithFeatureFlagBodyFallback(maxResults);
+    }
+
+    const query = `repo:${owner}/${repo} is:pr is:merged base:${this.targetBranch} in:body \"Feature-Flag:\"`;
+
+    const prs: any[] = [];
+    let page = 1;
+    const perPage = 100;
+
+    while (prs.length < maxResults) {
+      const response = await octokit.request('GET /search/issues', {
+        q: query,
+        per_page: perPage,
+        page,
+        sort: 'updated',
+        order: 'desc',
+      });
+
+      const items = response?.data?.items || [];
+      if (items.length === 0) {
+        break;
+      }
+
+      for (const item of items) {
+        if (prs.length >= maxResults) {
+          break;
+        }
+
+        const number = item?.number;
+        if (!number) {
+          continue;
+        }
+
+        try {
+          const pr = await this.github.getPullRequest(number);
+          prs.push(pr);
+        } catch {
+          // Skip PRs that cannot be fetched for any reason.
+        }
+      }
+
+      page++;
+    }
+
+    return prs;
+  }
+
+  /**
+   * Fallback for environments where octokit is unavailable on the github object.
+   */
+  private async findMergedPullRequestsWithFeatureFlagBodyFallback(
+    maxResults: number
+  ): Promise<any[]> {
+    const prs: any[] = [];
+
+    for await (const pr of this.github.pullRequestIterator(
+      this.targetBranch,
+      'MERGED',
+      maxResults,
+      false
+    )) {
+      if ((pr.body || '').match(/Feature-Flag:\s*(\w+)/i)) {
+        prs.push(pr);
+      }
+    }
+
+    return prs;
   }
 
   /**
