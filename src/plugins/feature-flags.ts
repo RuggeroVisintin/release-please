@@ -224,18 +224,22 @@ export class FeatureFlagPlugin extends ManifestPlugin {
         // Search for all commits mentioning this feature flag
         const grepPattern = `Feature-Flag: ${flag}`;
         const output = execSync(
-          `git log ${latestTag} --grep="${grepPattern}" --regexp-ignore-case --format="%H|%s|%b|%an|%ae"`,
+          `git log ${latestTag} --grep="${grepPattern}" --regexp-ignore-case --format="%H%x1f%s%x1f%b%x1e"`,
           {encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore']}
         );
 
         if (output.trim()) {
-          const lines = output.trim().split('\n');
-          for (const line of lines) {
-            // Extract only sha, subject, and body; skip author name and email
-            const parts = line.split('|');
-            const sha = parts[0];
-            const subject = parts[1] || '';
-            const body = parts[2] || '';
+          const records = output.split('\x1e');
+          for (const record of records) {
+            const trimmedRecord = record.trim();
+            if (!trimmedRecord) {
+              continue;
+            }
+
+            const parts = trimmedRecord.split('\x1f');
+            const sha = parts[0]?.trim();
+            const subject = parts[1]?.trim() || '';
+            const body = parts.slice(2).join('\x1f').trim();
 
             // Skip if we don't have the minimum required data
             if (!sha || !subject) {
@@ -244,14 +248,23 @@ export class FeatureFlagPlugin extends ManifestPlugin {
 
             // Reconstruct commit message
             const message = body ? `${subject}\n\n${body}` : subject;
+            const effectiveMessage = this.getEffectiveMessage(message);
+            const effectiveSubject = effectiveMessage
+              .split('\n')
+              .find(line => line.trim().length > 0)
+              ?.trim();
+
+            if (!effectiveSubject) {
+              continue;
+            }
 
             commits.push({
               sha,
               message,
               files: [], // Historical commits don't need file info for changelog
-              type: this.extractCommitType(subject),
-              scope: this.extractCommitScope(subject),
-              bareMessage: subject,
+              type: this.extractCommitType(effectiveSubject),
+              scope: this.extractCommitScope(effectiveSubject),
+              bareMessage: effectiveSubject,
               notes: [],
               references: [],
               breaking: false,
@@ -296,20 +309,7 @@ export class FeatureFlagPlugin extends ManifestPlugin {
    * Determine if a commit should be included based on its feature flag
    */
   private shouldIncludeCommit(commit: Commit): boolean {
-    // Check for commit override in PR body first
-    let messageToCheck = commit.message;
-
-    if (commit.pullRequest?.body) {
-      const overrideMessage = (
-        commit.pullRequest.body.split('BEGIN_COMMIT_OVERRIDE')[1] || ''
-      )
-        .split('END_COMMIT_OVERRIDE')[0]
-        .trim();
-
-      if (overrideMessage) {
-        messageToCheck = overrideMessage;
-      }
-    }
+    const messageToCheck = this.getFeatureFlagMessage(commit);
 
     // Extract feature flag from commit message or override
     const flagMatch = messageToCheck.match(/Feature-Flag:\s*(\w+)/i);
@@ -330,6 +330,40 @@ export class FeatureFlagPlugin extends ManifestPlugin {
     );
 
     return isEnabled;
+  }
+
+  /**
+   * Extract commit override block content from any text that may contain it.
+   */
+  private extractOverrideMessage(text: string): string | undefined {
+    const match = text.match(
+      /BEGIN_COMMIT_OVERRIDE([\s\S]*?)END_COMMIT_OVERRIDE/i
+    );
+    const override = match?.[1]?.trim();
+    return override || undefined;
+  }
+
+  /**
+   * Return effective message for parsing commit metadata.
+   */
+  private getEffectiveMessage(message: string): string {
+    return this.extractOverrideMessage(message) || message;
+  }
+
+  /**
+   * Message used for feature-flag evaluation, preferring PR override when available.
+   */
+  private getFeatureFlagMessage(commit: Commit): string {
+    if (commit.pullRequest?.body) {
+      const overrideFromPr = this.extractOverrideMessage(
+        commit.pullRequest.body
+      );
+      if (overrideFromPr) {
+        return overrideFromPr;
+      }
+    }
+
+    return this.getEffectiveMessage(commit.message);
   }
 }
 

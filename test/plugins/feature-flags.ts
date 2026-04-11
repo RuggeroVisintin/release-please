@@ -265,7 +265,7 @@ END_COMMIT_OVERRIDE`,
           command.includes('git log sparkenginewebeditor-v0.0.15') &&
           command.includes('Feature-Flag: FEATURE_ADD_COMPONENTS')
         ) {
-          return 'old123|feat: add component system|Feature-Flag: FEATURE_ADD_COMPONENTS|Author|author@example.com\n';
+          return 'old123\x1ffeat: add component system\x1fFeature-Flag: FEATURE_ADD_COMPONENTS\x1e';
         }
         throw new Error(`Unexpected command: ${command}`);
       });
@@ -324,6 +324,63 @@ END_COMMIT_OVERRIDE`,
 
       assert.strictEqual(commitsByPath['.'].length, 1);
       assert.strictEqual(commitsByPath['.'][0].sha, 'new456');
+    });
+
+    it('uses commit override message for historical commit type and feature flag', async () => {
+      process.env.FEATURE_FLAG_FILE = '.env.production';
+
+      execSyncStub.callsFake((command: string) => {
+        if (command.includes('git show HEAD:.env.production')) {
+          return 'FEATURE_ADD_COMPONENTS=true\n';
+        }
+        if (command.includes('git describe --tags --abbrev=0')) {
+          return 'sparkenginewebeditor-v0.0.15\n';
+        }
+        if (
+          command.includes(
+            'git show sparkenginewebeditor-v0.0.15:.env.production'
+          )
+        ) {
+          return 'FEATURE_ADD_COMPONENTS=false\n';
+        }
+        if (
+          command.includes('git log sparkenginewebeditor-v0.0.15') &&
+          command.includes('Feature-Flag: FEATURE_ADD_COMPONENTS')
+        ) {
+          return [
+            'old999\x1fchore: internal refactor\x1fBEGIN_COMMIT_OVERRIDE',
+            'feat: add components from override',
+            '',
+            'Feature-Flag: FEATURE_ADD_COMPONENTS',
+            'END_COMMIT_OVERRIDE\x1e',
+          ].join('\n');
+        }
+        throw new Error(`Unexpected command: ${command}`);
+      });
+
+      const plugin = new FeatureFlagPlugin({} as any, 'main', {});
+
+      const commitsByPath = {
+        '.': [
+          {
+            sha: 'new456',
+            message: 'build: enable FEATURE_ADD_COMPONENTS flag in production',
+            files: [],
+          } as Commit,
+        ],
+      };
+
+      await plugin.preconfigure({}, commitsByPath, {});
+
+      const historical = commitsByPath['.'].find(c => c.sha === 'old999') as
+        | (Commit & {type?: string; bareMessage?: string})
+        | undefined;
+      assert.ok(historical);
+      assert.strictEqual(historical?.type, 'feat');
+      assert.strictEqual(
+        historical?.bareMessage,
+        'feat: add components from override'
+      );
     });
   });
 });
