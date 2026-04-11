@@ -19,7 +19,7 @@ import {
   SentenceCasePluginConfig,
   GroupPriorityPluginConfig,
 } from '../manifest';
-import {GitHub} from '../github';
+import {Scm} from '../scm';
 import {ManifestPlugin} from '../plugin';
 import {LinkedVersions} from '../plugins/linked-versions';
 import {CargoWorkspace} from '../plugins/cargo-workspace';
@@ -35,7 +35,7 @@ import {FeatureFlagPlugin} from '../plugins/feature-flags';
 
 export interface PluginFactoryOptions {
   type: PluginType;
-  github: GitHub;
+  github: Scm;
   targetBranch: string;
   repositoryConfig: RepositoryConfig;
   manifestPath: string;

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import {ChangelogSection} from './changelog-notes';
-import {GitHub, GitHubRelease, GitHubTag} from './github';
+import {Scm, ScmRelease, ScmTag} from './scm';
 import {Version, VersionsMap} from './version';
 import {Commit, parseConventionalCommits} from './commit';
 import {PullRequest} from './pull-request';
@@ -107,12 +107,14 @@ export interface ReleaserConfig {
   skipGithubRelease?: boolean; // Note this should be renamed to skipGitHubRelease in next major release\
   skipChangelog?: boolean;
   draft?: boolean;
+  forceTag?: boolean;
   prerelease?: boolean;
   draftPullRequest?: boolean;
   component?: string;
   packageName?: string;
   includeComponentInTag?: boolean;
   includeVInTag?: boolean;
+  includeVInReleaseName?: boolean;
   pullRequestTitlePattern?: string;
   pullRequestHeader?: string;
   pullRequestFooter?: string;
@@ -130,6 +132,7 @@ export interface ReleaserConfig {
   changelogPath?: string;
   changelogType?: ChangelogNotesType;
   changelogHost?: string;
+  includeCommitAuthors?: boolean;
 
   // Ruby-only
   versionFile?: string;
@@ -151,6 +154,7 @@ export interface CandidateRelease extends Release {
   pullRequest: PullRequest;
   path: string;
   draft?: boolean;
+  forceTag?: boolean;
   prerelease?: boolean;
 }
 
@@ -165,6 +169,7 @@ interface ReleaserConfigJson {
   'skip-github-release'?: boolean;
   'skip-changelog'?: boolean;
   draft?: boolean;
+  'force-tag-creation'?: boolean;
   prerelease?: boolean;
   'draft-pull-request'?: boolean;
   label?: string;
@@ -172,8 +177,10 @@ interface ReleaserConfigJson {
   'extra-label'?: string;
   'include-component-in-tag'?: boolean;
   'include-v-in-tag'?: boolean;
+  'include-v-in-release-name'?: boolean;
   'changelog-type'?: ChangelogNotesType;
   'changelog-host'?: string;
+  'include-commit-authors'?: boolean;
   'pull-request-title-pattern'?: string;
   'pull-request-header'?: string;
   'pull-request-footer'?: string;
@@ -210,6 +217,7 @@ export interface ManifestOptions {
   groupPullRequestTitlePattern?: string;
   releaseSearchDepth?: number;
   commitSearchDepth?: number;
+  commitBatchSize?: number;
   logger?: Logger;
   dateFormat?: string;
 }
@@ -265,6 +273,7 @@ export interface ManifestConfig extends ReleaserConfigJson {
   'group-pull-request-title-pattern'?: string;
   'release-search-depth'?: number;
   'commit-search-depth'?: number;
+  'commit-batch-size'?: number;
   'sequential-calls'?: boolean;
   'always-update'?: boolean;
 }
@@ -283,10 +292,11 @@ export const DEFAULT_SNAPSHOT_LABELS = ['autorelease: snapshot'];
 export const SNOOZE_LABEL = 'autorelease: snooze';
 const DEFAULT_RELEASE_SEARCH_DEPTH = 400;
 const DEFAULT_COMMIT_SEARCH_DEPTH = 500;
+const DEFAULT_COMMIT_BATCH_SIZE = 10;
 
 export const MANIFEST_PULL_REQUEST_TITLE_PATTERN = 'chore: release ${branch}';
 
-export interface CreatedRelease extends GitHubRelease {
+export interface CreatedRelease extends ScmRelease {
   id: number;
   path: string;
   version: string;
@@ -298,7 +308,7 @@ export interface CreatedRelease extends GitHubRelease {
 
 export class Manifest {
   private repository: Repository;
-  private github: GitHub;
+  private github: Scm;
   readonly repositoryConfig: RepositoryConfig;
   readonly releasedVersions: ReleasedVersions;
   private targetBranch: string;
@@ -323,6 +333,7 @@ export class Manifest {
   private groupPullRequestTitlePattern?: string;
   readonly releaseSearchDepth: number;
   readonly commitSearchDepth: number;
+  readonly commitBatchSize: number;
   readonly logger: Logger;
   private pullRequestOverflowHandler: PullRequestOverflowHandler;
 
@@ -356,7 +367,7 @@ export class Manifest {
    *   pull request. Defaults to `[autorelease: tagged]`
    */
   constructor(
-    github: GitHub,
+    github: Scm,
     targetBranch: string,
     repositoryConfig: RepositoryConfig,
     releasedVersions: ReleasedVersions,
@@ -392,6 +403,8 @@ export class Manifest {
       manifestOptions?.releaseSearchDepth || DEFAULT_RELEASE_SEARCH_DEPTH;
     this.commitSearchDepth =
       manifestOptions?.commitSearchDepth || DEFAULT_COMMIT_SEARCH_DEPTH;
+    this.commitBatchSize =
+      manifestOptions?.commitBatchSize || DEFAULT_COMMIT_BATCH_SIZE;
     this.logger = manifestOptions?.logger ?? defaultLogger;
     this.plugins = (manifestOptions?.plugins || []).map(pluginType =>
       buildPlugin({
@@ -420,7 +433,7 @@ export class Manifest {
    * @returns {Manifest}
    */
   static async fromManifest(
-    github: GitHub,
+    github: Scm,
     targetBranch: string,
     configFile: string = DEFAULT_RELEASE_PLEASE_CONFIG,
     manifestFile: string = DEFAULT_RELEASE_PLEASE_MANIFEST,
@@ -476,7 +489,7 @@ export class Manifest {
    * @returns {Manifest}
    */
   static async fromConfig(
-    github: GitHub,
+    github: Scm,
     targetBranch: string,
     config: ReleaserConfig,
     manifestOptions?: ManifestOptions,
@@ -621,6 +634,7 @@ export class Manifest {
     const commitGenerator = this.github.mergeCommitIterator(this.targetBranch, {
       maxResults: this.commitSearchDepth,
       backfillFiles: true,
+      batchSize: this.commitBatchSize,
     });
     const releaseShas = new Set(Object.values(releaseShasByPath));
     this.logger.debug(releaseShas);
@@ -892,8 +906,8 @@ export class Manifest {
     return releasesByPath;
   }
 
-  private async getAllTags(): Promise<Record<string, GitHubTag>> {
-    const allTags: Record<string, GitHubTag> = {};
+  private async getAllTags(): Promise<Record<string, ScmTag>> {
+    const allTags: Record<string, ScmTag> = {};
     for await (const tag of this.github.tagIterator()) {
       allTags[tag.name] = tag;
     }
@@ -1184,6 +1198,7 @@ export class Manifest {
             path,
             pullRequest,
             draft: config.draft ?? this.draft,
+            forceTag: config.forceTag,
             prerelease:
               config.prerelease &&
               (!!release.tag.version.preRelease ||
@@ -1311,6 +1326,7 @@ export class Manifest {
     const githubRelease = await this.github.createRelease(release, {
       draft: release.draft,
       prerelease: release.prerelease,
+      forceTag: release.forceTag,
     });
 
     return {
@@ -1381,10 +1397,12 @@ function extractReleaserConfig(
     changelogSections: config['changelog-sections'],
     changelogPath: config['changelog-path'],
     changelogHost: config['changelog-host'],
+    includeCommitAuthors: config['include-commit-authors'],
     releaseAs: config['release-as'],
     skipGithubRelease: config['skip-github-release'],
     skipChangelog: config['skip-changelog'],
     draft: config.draft,
+    forceTag: config['force-tag-creation'],
     prerelease: config.prerelease,
     draftPullRequest: config['draft-pull-request'],
     component: config['component'],
@@ -1393,6 +1411,7 @@ function extractReleaserConfig(
     extraFiles: config['extra-files'],
     includeComponentInTag: config['include-component-in-tag'],
     includeVInTag: config['include-v-in-tag'],
+    includeVInReleaseName: config['include-v-in-release-name'],
     changelogType: config['changelog-type'],
     pullRequestTitlePattern: config['pull-request-title-pattern'],
     pullRequestHeader: config['pull-request-header'],
@@ -1421,7 +1440,7 @@ function extractReleaserConfig(
  * @param {string} releaseAs Optional. Override release-as and use the given version
  */
 async function parseConfig(
-  github: GitHub,
+  github: Scm,
   configFile: string,
   branch: string,
   onlyPath?: string,
@@ -1459,6 +1478,7 @@ async function parseConfig(
     extraLabels: configExtraLabel?.split(','),
     releaseSearchDepth: config['release-search-depth'],
     commitSearchDepth: config['commit-search-depth'],
+    commitBatchSize: config['commit-batch-size'],
     sequentialCalls: config['sequential-calls'],
   };
   return {config: repositoryConfig, options: manifestOptions};
@@ -1474,7 +1494,7 @@ async function parseConfig(
  * @throws {ConfigurationError} if missing the manifest config file
  */
 async function fetchManifestConfig(
-  github: GitHub,
+  github: Scm,
   configFile: string,
   branch: string
 ): Promise<ManifestConfig> {
@@ -1507,7 +1527,7 @@ async function fetchManifestConfig(
  * @returns {Record<string, string>}
  */
 async function parseReleasedVersions(
-  github: GitHub,
+  github: Scm,
   manifestFile: string,
   branch: string
 ): Promise<ReleasedVersions> {
@@ -1532,7 +1552,7 @@ async function parseReleasedVersions(
  * @throws {ConfigurationError} if missing the manifest config file
  */
 async function fetchReleasedVersions(
-  github: GitHub,
+  github: Scm,
   manifestFile: string,
   branch: string
 ): Promise<Record<string, string>> {
@@ -1575,7 +1595,7 @@ function isPublishedVersion(strategy: Strategy, version: Version): boolean {
  * @param {string} prefix Limit the release to a specific component.
  */
 async function latestReleaseVersion(
-  github: GitHub,
+  github: Scm,
   targetBranch: string,
   releaseFilter: (version: Version) => boolean,
   config: ReleaserConfig,
@@ -1735,11 +1755,14 @@ function mergeReleaserConfig(
     changelogPath: pathConfig.changelogPath ?? defaultConfig.changelogPath,
     changelogHost: pathConfig.changelogHost ?? defaultConfig.changelogHost,
     changelogType: pathConfig.changelogType ?? defaultConfig.changelogType,
+    includeCommitAuthors:
+      pathConfig.includeCommitAuthors ?? defaultConfig.includeCommitAuthors,
     releaseAs: pathConfig.releaseAs ?? defaultConfig.releaseAs,
     skipGithubRelease:
       pathConfig.skipGithubRelease ?? defaultConfig.skipGithubRelease,
     skipChangelog: pathConfig.skipChangelog ?? defaultConfig.skipChangelog,
     draft: pathConfig.draft ?? defaultConfig.draft,
+    forceTag: pathConfig.forceTag ?? defaultConfig.forceTag,
     draftPullRequest:
       pathConfig.draftPullRequest ?? defaultConfig.draftPullRequest,
     prerelease: pathConfig.prerelease ?? defaultConfig.prerelease,
@@ -1750,6 +1773,8 @@ function mergeReleaserConfig(
     includeComponentInTag:
       pathConfig.includeComponentInTag ?? defaultConfig.includeComponentInTag,
     includeVInTag: pathConfig.includeVInTag ?? defaultConfig.includeVInTag,
+    includeVInReleaseName:
+      pathConfig.includeVInReleaseName ?? defaultConfig.includeVInReleaseName,
     tagSeparator: pathConfig.tagSeparator ?? defaultConfig.tagSeparator,
     pullRequestTitlePattern:
       pathConfig.pullRequestTitlePattern ??

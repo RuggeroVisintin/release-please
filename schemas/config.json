@@ -66,6 +66,10 @@
           "description": "Create the GitHub release in draft mode. Defaults to `false`.",
           "type": "boolean"
         },
+        "force-tag-creation": {
+          "description": "Force the creation of a Git tag for the release. This is particularly useful when `draft` is enabled, because GitHub does not create a Git tag for draft releases until they are published. This 'lazy tag creation' causes release-please to fail to find the previous release, potentially generating incorrect changelogs. Setting this to `true` ensures the tag is created immediately. Defaults to `false`.",
+          "type": "boolean"
+        },
         "prerelease": {
           "description": "Create the GitHub release as prerelease. Defaults to `false`.",
           "type": "boolean"
@@ -83,7 +87,11 @@
           "type": "boolean"
         },
         "include-v-in-tag": {
-          "description": "When tagging a release, include `v` in the tag. Defaults to `false`.",
+          "description": "When tagging a release, include `v` in the tag. Defaults to `true`.",
+          "type": "boolean"
+        },
+        "include-v-in-release-name": {
+          "description": "Include `v` in the GitHub release name. Defaults to `true`.",
           "type": "boolean"
         },
         "changelog-type": {
@@ -423,6 +431,10 @@
           "description": "When considering commit history, only look this many commits deep.",
           "type": "number"
         },
+        "commit-batch-size": {
+          "description": "Number of commits to fetch per API request when searching commit history. Lower values result in more API calls but may help avoid timeouts. Defaults to 10.",
+          "type": "number"
+        },
         "sequential-calls": {
           "description": "Whether to open pull requests/releases sequentially rather than concurrently. If you have many components, you may want to set this to avoid secondary rate limits.",
           "type": "boolean"
@@ -454,6 +466,7 @@
     "group-pull-request-title-pattern": true,
     "release-search-depth": true,
     "commit-search-depth": true,
+    "commit-batch-size": true,
     "sequential-calls": true,
     "release-type": true,
     "bump-minor-pre-major": true,
@@ -464,6 +477,7 @@
     "skip-github-release": true,
     "skip-changelog": true,
     "draft": true,
+    "force-tag-creation": true,
     "prerelease": true,
     "draft-pull-request": true,
     "label": true,
@@ -471,6 +485,7 @@
     "extra-label": true,
     "include-component-in-tag": true,
     "include-v-in-tag": true,
+    "include-v-in-release-name": true,
     "changelog-type": true,
     "changelog-host": true,
     "changelog-path": true,

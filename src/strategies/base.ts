@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import {Strategy, BuildReleaseOptions, BumpReleaseOptions} from '../strategy';
-import {GitHub} from '../github';
+import {Scm} from '../scm';
 import {VersioningStrategy} from '../versioning-strategy';
 import {Repository} from '../repository';
 import {ChangelogNotes, ChangelogSection} from '../changelog-notes';
@@ -57,7 +57,7 @@ export interface BaseStrategyOptions {
   path?: string;
   bumpMinorPreMajor?: boolean;
   bumpPatchForMinorPreMajor?: boolean;
-  github: GitHub;
+  github: Scm;
   component?: string;
   packageName?: string;
   versioningStrategy?: VersioningStrategy;
@@ -75,6 +75,7 @@ export interface BaseStrategyOptions {
   changelogNotes?: ChangelogNotes;
   includeComponentInTag?: boolean;
   includeVInTag?: boolean;
+  includeVInReleaseName?: boolean;
   pullRequestTitlePattern?: string;
   pullRequestHeader?: string;
   pullRequestFooter?: string;
@@ -87,6 +88,7 @@ export interface BaseStrategyOptions {
   initialVersion?: string;
   extraLabels?: string[];
   dateFormat?: string;
+  includeCommitAuthors?: boolean;
 }
 
 /**
@@ -95,7 +97,7 @@ export interface BaseStrategyOptions {
  */
 export abstract class BaseStrategy implements Strategy {
   readonly path: string;
-  protected github: GitHub;
+  protected github: Scm;
   protected logger: Logger;
   protected component?: string;
   private packageName?: string;
@@ -110,6 +112,7 @@ export abstract class BaseStrategy implements Strategy {
   private releaseAs?: string;
   protected includeComponentInTag: boolean;
   protected includeVInTag: boolean;
+  protected includeVInReleaseName: boolean;
   protected initialVersion?: string;
   readonly pullRequestTitlePattern?: string;
   readonly pullRequestHeader?: string;
@@ -118,6 +121,7 @@ export abstract class BaseStrategy implements Strategy {
   readonly extraFiles: ExtraFile[];
   readonly extraLabels: string[];
   protected dateFormat: string;
+  protected includeCommitAuthors?: boolean;
 
   readonly changelogNotes: ChangelogNotes;
 
@@ -147,6 +151,7 @@ export abstract class BaseStrategy implements Strategy {
       options.changelogNotes || new DefaultChangelogNotes(options);
     this.includeComponentInTag = options.includeComponentInTag ?? true;
     this.includeVInTag = options.includeVInTag ?? true;
+    this.includeVInReleaseName = options.includeVInReleaseName ?? true;
     this.pullRequestTitlePattern = options.pullRequestTitlePattern;
     this.pullRequestHeader = options.pullRequestHeader;
     this.pullRequestFooter = options.pullRequestFooter;
@@ -155,6 +160,7 @@ export abstract class BaseStrategy implements Strategy {
     this.initialVersion = options.initialVersion;
     this.extraLabels = options.extraLabels || [];
     this.dateFormat = options.dateFormat || DEFAULT_DATE_FORMAT;
+    this.includeCommitAuthors = options.includeCommitAuthors;
   }
 
   /**
@@ -229,6 +235,7 @@ export abstract class BaseStrategy implements Strategy {
       targetBranch: this.targetBranch,
       changelogSections: this.changelogSections,
       commits: commits,
+      includeCommitAuthors: this.includeCommitAuthors,
     });
   }
 
@@ -698,10 +705,11 @@ export abstract class BaseStrategy implements Strategy {
       this.tagSeparator,
       this.includeVInTag
     );
+    const versionPrefix = this.includeVInReleaseName ? 'v' : '';
     const releaseName =
       component && this.includeComponentInTag
-        ? `${component}: v${version.toString()}`
-        : `v${version.toString()}`;
+        ? `${component}: ${versionPrefix}${version.toString()}`
+        : `${versionPrefix}${version.toString()}`;
     return {
       name: releaseName,
       tag,

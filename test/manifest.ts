@@ -3776,15 +3776,18 @@ describe('Manifest', () => {
         .resolves(buildGitHubFileRaw('some-content'));
       stubSuggesterWithSnapshot(sandbox, this.test!.fullTitle());
       mockPullRequests(github, []);
-      sandbox.stub(github, 'getPullRequest').withArgs(22).resolves({
-        number: 22,
-        title: 'pr title1',
-        body: 'pr body1',
-        headBranchName: 'release-please/branches/main',
-        baseBranchName: 'main',
-        labels: [],
-        files: [],
-      });
+      sandbox
+        .stub((github as any).gitHubApi, 'getPullRequest')
+        .withArgs(22)
+        .resolves({
+          number: 22,
+          title: 'pr title1',
+          body: 'pr body1',
+          headBranchName: 'release-please/branches/main',
+          baseBranchName: 'main',
+          labels: [],
+          files: [],
+        });
       const manifest = new Manifest(
         github,
         'main',
@@ -3840,7 +3843,7 @@ describe('Manifest', () => {
         .resolves(buildGitHubFileRaw('some-content-2'));
       mockPullRequests(github, []);
       sandbox
-        .stub(github, 'getPullRequest')
+        .stub((github as any).gitHubApi, 'getPullRequest')
         .withArgs(123)
         .resolves({
           number: 123,
@@ -3968,15 +3971,18 @@ describe('Manifest', () => {
         .resolves(buildGitHubFileRaw('some-content'));
       stubSuggesterWithSnapshot(sandbox, this.test!.fullTitle());
       mockPullRequests(github, []);
-      sandbox.stub(github, 'getPullRequest').withArgs(22).resolves({
-        number: 22,
-        title: 'pr title1',
-        body: 'pr body1',
-        headBranchName: 'release-please/branches/main',
-        baseBranchName: 'main',
-        labels: [],
-        files: [],
-      });
+      sandbox
+        .stub((github as any).gitHubApi, 'getPullRequest')
+        .withArgs(22)
+        .resolves({
+          number: 22,
+          title: 'pr title1',
+          body: 'pr body1',
+          headBranchName: 'release-please/branches/main',
+          baseBranchName: 'main',
+          labels: [],
+          files: [],
+        });
       const manifest = new Manifest(
         github,
         'main',
@@ -4031,15 +4037,18 @@ describe('Manifest', () => {
         .resolves(buildGitHubFileRaw('some-content'));
       stubSuggesterWithSnapshot(sandbox, this.test!.fullTitle());
       mockPullRequests(github, []);
-      sandbox.stub(github, 'getPullRequest').withArgs(22).resolves({
-        number: 22,
-        title: 'pr title1',
-        body: 'pr body1',
-        headBranchName: 'release-please/branches/main',
-        baseBranchName: 'main',
-        labels: [],
-        files: [],
-      });
+      sandbox
+        .stub((github as any).gitHubApi, 'getPullRequest')
+        .withArgs(22)
+        .resolves({
+          number: 22,
+          title: 'pr title1',
+          body: 'pr body1',
+          headBranchName: 'release-please/branches/main',
+          baseBranchName: 'main',
+          labels: [],
+          files: [],
+        });
       const manifest = new Manifest(
         github,
         'main',
@@ -5178,6 +5187,56 @@ describe('Manifest', () => {
       expect(releases[0].prerelease).to.be.undefined;
     });
 
+    it('should build draft releases with forced tag', async () => {
+      mockPullRequests(
+        github,
+        [],
+        [
+          {
+            headBranchName: 'release-please/branches/main',
+            baseBranchName: 'main',
+            number: 1234,
+            title: 'chore: release main',
+            body: pullRequestBody('release-notes/single-manifest.txt'),
+            labels: ['autorelease: pending'],
+            files: [],
+            sha: 'abc123',
+          },
+        ]
+      );
+      const getFileContentsStub = sandbox.stub(
+        github,
+        'getFileContentsOnBranch'
+      );
+      getFileContentsStub
+        .withArgs('package.json', 'main')
+        .resolves(
+          buildGitHubFileRaw(
+            JSON.stringify({name: '@google-cloud/release-brancher'})
+          )
+        );
+      const manifest = new Manifest(
+        github,
+        'main',
+        {
+          '.': {
+            releaseType: 'node',
+            draft: true,
+            forceTag: true,
+          },
+        },
+        {
+          '.': Version.parse('1.3.1'),
+        }
+      );
+      const releases = await manifest.buildReleases();
+      expect(releases).lengthOf(1);
+      expect(releases[0].name).to.eql('release-brancher: v1.3.1');
+      expect(releases[0].draft).to.be.true;
+      expect(releases[0].forceTag).to.be.true;
+      expect(releases[0].prerelease).to.be.undefined;
+    });
+
     it('should build draft releases manifest wide', async () => {
       mockPullRequests(
         github,
@@ -6232,6 +6291,86 @@ describe('Manifest', () => {
       sinon.assert.calledOnceWithExactly(githubReleaseStub, sinon.match.any, {
         draft: true,
         prerelease: undefined,
+        forceTag: undefined,
+      } as ReleaseOptions);
+      sinon.assert.calledOnce(commentStub);
+      sinon.assert.calledOnceWithExactly(
+        addLabelsStub,
+        ['autorelease: tagged'],
+        1234
+      );
+      sinon.assert.calledOnceWithExactly(
+        removeLabelsStub,
+        ['autorelease: pending'],
+        1234
+      );
+    });
+
+    it('should create a draft release with forced tag', async () => {
+      mockPullRequests(
+        github,
+        [],
+        [
+          {
+            headBranchName: 'release-please/branches/main',
+            baseBranchName: 'main',
+            number: 1234,
+            title: 'chore: release main',
+            body: pullRequestBody('release-notes/single-manifest.txt'),
+            labels: ['autorelease: pending'],
+            files: [],
+            sha: 'abc123',
+          },
+        ]
+      );
+      const getFileContentsStub = sandbox.stub(
+        github,
+        'getFileContentsOnBranch'
+      );
+      getFileContentsStub
+        .withArgs('package.json', 'main')
+        .resolves(
+          buildGitHubFileRaw(
+            JSON.stringify({name: '@google-cloud/release-brancher'})
+          )
+        );
+      const githubReleaseStub = mockCreateRelease(github, [
+        {
+          id: 123456,
+          sha: 'abc123',
+          tagName: 'release-brancher-v1.3.1',
+          draft: true,
+        },
+      ]);
+      const commentStub = sandbox.stub(github, 'commentOnIssue').resolves();
+      const addLabelsStub = sandbox.stub(github, 'addIssueLabels').resolves();
+      const removeLabelsStub = sandbox
+        .stub(github, 'removeIssueLabels')
+        .resolves();
+      const manifest = new Manifest(
+        github,
+        'main',
+        {
+          '.': {
+            releaseType: 'node',
+            draft: true,
+            forceTag: true,
+          },
+        },
+        {
+          '.': Version.parse('1.3.1'),
+        }
+      );
+      const releases = await manifest.createReleases();
+      expect(releases).lengthOf(1);
+      expect(releases[0]!.tagName).to.eql('release-brancher-v1.3.1');
+      expect(releases[0]!.sha).to.eql('abc123');
+      expect(releases[0]!.notes).to.eql('some release notes');
+      expect(releases[0]!.draft).to.be.true;
+      sinon.assert.calledOnceWithExactly(githubReleaseStub, sinon.match.any, {
+        draft: true,
+        prerelease: undefined,
+        forceTag: true,
       } as ReleaseOptions);
       sinon.assert.calledOnce(commentStub);
       sinon.assert.calledOnceWithExactly(
@@ -6311,6 +6450,7 @@ describe('Manifest', () => {
       sinon.assert.calledOnceWithExactly(githubReleaseStub, sinon.match.any, {
         draft: undefined,
         prerelease: true,
+        forceTag: undefined,
       } as ReleaseOptions);
       sinon.assert.calledOnce(commentStub);
       sinon.assert.calledOnceWithExactly(
@@ -6388,6 +6528,7 @@ describe('Manifest', () => {
       sinon.assert.calledOnceWithExactly(githubReleaseStub, sinon.match.any, {
         draft: undefined,
         prerelease: false,
+        forceTag: undefined,
       } as ReleaseOptions);
       sinon.assert.calledOnce(commentStub);
       sinon.assert.calledOnceWithExactly(

@@ -4,6 +4,67 @@
 
 [1]: https://www.npmjs.com/package/release-please?activeTab=versions
 
+## [17.5.2](https://github.com/googleapis/release-please/compare/v17.5.1...v17.5.2) (2026-04-10)
+
+
+### Bug Fixes
+
+* limit git fetch to cloneDepth config ([#2744](https://github.com/googleapis/release-please/issues/2744)) ([90c4293](https://github.com/googleapis/release-please/commit/90c4293b7aa567bef0d5679d330a83dda25548c3))
+
+## [17.5.1](https://github.com/googleapis/release-please/compare/v17.5.0...v17.5.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* adding no-verify option in Git operations ([#2742](https://github.com/googleapis/release-please/issues/2742)) ([51d0c84](https://github.com/googleapis/release-please/commit/51d0c84a71803f17f3a50800f43a1c097ea4b122))
+
+## [17.5.0](https://github.com/googleapis/release-please/compare/v17.4.1...v17.5.0) (2026-04-09)
+
+
+### Features
+
+* add include-commit-authors option to include author info in changelogs ([#2628](https://github.com/googleapis/release-please/issues/2628)) ([77b12ad](https://github.com/googleapis/release-please/commit/77b12adf477fc4de4dea6fead96bc58a9f241be9)), closes [#1716](https://github.com/googleapis/release-please/issues/1716)
+* create Scm abstraction ([#2729](https://github.com/googleapis/release-please/issues/2729)) ([8c5e2ae](https://github.com/googleapis/release-please/commit/8c5e2ae31e8f4eda506fd372eba3c342e7a9ef22))
+
+## [17.4.1](https://github.com/googleapis/release-please/compare/v17.4.0...v17.4.1) (2026-04-08)
+
+
+### Bug Fixes
+
+* do not attempt to create pull request when no changes detected ([#2722](https://github.com/googleapis/release-please/issues/2722)) ([9ecabc4](https://github.com/googleapis/release-please/commit/9ecabc40a724e1ba64158844fc9b27ee5d6ed0a2))
+
+## [17.4.0](https://github.com/googleapis/release-please/compare/v17.3.0...v17.4.0) (2026-04-06)
+
+
+### Features
+
+* **java-yoshi-mono-repo:** look for Version.java files ([#2730](https://github.com/googleapis/release-please/issues/2730)) ([5126fee](https://github.com/googleapis/release-please/commit/5126feefac4cee1fb02142e2f515fda4d9f345d4))
+* resolve Dependabot security alerts ([#2709](https://github.com/googleapis/release-please/issues/2709)) ([7f2e4ec](https://github.com/googleapis/release-please/commit/7f2e4ec0fee60fb14f279218102ea8b07032b956))
+
+## [17.3.0](https://github.com/googleapis/release-please/compare/v17.2.1...v17.3.0) (2026-02-18)
+
+
+### Features
+
+* add ability to configure how many commits we retrieve when iterating through repo history ([#2679](https://github.com/googleapis/release-please/issues/2679)) ([fee210a](https://github.com/googleapis/release-please/commit/fee210a14777ee17b6993ec276b7ac768bfd4253))
+
+## [17.2.1](https://github.com/googleapis/release-please/compare/v17.2.0...v17.2.1) (2026-02-13)
+
+
+### Bug Fixes
+
+* "prerelease" versioning strategy ([#2516](https://github.com/googleapis/release-please/issues/2516)) ([95a6568](https://github.com/googleapis/release-please/commit/95a65681a591c39ed7b2e55db0064bb8839575b4))
+* a bug where a reference to an missing variable in PowerShell would cause an exception ([#2619](https://github.com/googleapis/release-please/issues/2619)) ([0279fcf](https://github.com/googleapis/release-please/commit/0279fcf19c6ef73633a02b45e9cd31e78d8df77e))
+
+## [17.2.0](https://github.com/googleapis/release-please/compare/v17.1.3...v17.2.0) (2026-01-20)
+
+
+### Features
+
+* add --force-tag option to explicitly create git tags for releases. ([#2627](https://github.com/googleapis/release-please/issues/2627)) ([e3eba37](https://github.com/googleapis/release-please/commit/e3eba3771d2df132bacd6a18949d7c690790c952))
+* add include-v-in-release-name config option ([#2633](https://github.com/googleapis/release-please/issues/2633)) ([84a43ef](https://github.com/googleapis/release-please/commit/84a43efcae8dc1028d132377fb387b816113f5cb))
+* **dependency-manifest.ts:** add support for Dependabot commit messages ([#2584](https://github.com/googleapis/release-please/issues/2584)) ([6a9ddb7](https://github.com/googleapis/release-please/commit/6a9ddb7112984f89a89c8856a0edd385e662aa9a))
+
 ## [17.1.3](https://github.com/googleapis/release-please/compare/v17.1.2...v17.1.3) (2025-10-06)
 
 
