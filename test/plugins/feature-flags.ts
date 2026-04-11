@@ -382,5 +382,87 @@ END_COMMIT_OVERRIDE`,
         'feat: add components from override'
       );
     });
+
+    it('includes merged PR override commits when git history lacks Feature-Flag footer', async () => {
+      process.env.FEATURE_FLAG_FILE = '.env.production';
+
+      execSyncStub.callsFake((command: string) => {
+        if (command.includes('git show HEAD:.env.production')) {
+          return 'FEATURE_ADD_COMPONENTS=true\n';
+        }
+        if (command.includes('git describe --tags --abbrev=0')) {
+          return 'sparkenginewebeditor-v0.0.15\n';
+        }
+        if (
+          command.includes(
+            'git show sparkenginewebeditor-v0.0.15:.env.production'
+          )
+        ) {
+          return 'FEATURE_ADD_COMPONENTS=false\n';
+        }
+        if (
+          command.includes('git log sparkenginewebeditor-v0.0.15') &&
+          command.includes('Feature-Flag: FEATURE_ADD_COMPONENTS')
+        ) {
+          return '';
+        }
+        if (
+          command.includes('git rev-list sparkenginewebeditor-v0.0.15..HEAD')
+        ) {
+          return 'merge270\nother123\n';
+        }
+        throw new Error(`Unexpected command: ${command}`);
+      });
+
+      const plugin = new FeatureFlagPlugin({} as any, 'main', {});
+      (plugin as any).github = {
+        pullRequestIterator: async function* () {
+          yield {
+            number: 270,
+            baseBranchName: 'main',
+            headBranchName: 'feat/entity',
+            mergeCommitOid: 'merge270',
+            title:
+              'feat(entity-explorer): add selected component to current entity',
+            body: `Relates to #253
+
+BEGIN_COMMIT_OVERRIDE
+feat(entity-explorer): add selected component to current entity
+
+Feature-Flag: FEATURE_ADD_COMPONENTS
+END_COMMIT_OVERRIDE`,
+            labels: [],
+            files: [],
+          };
+        },
+      };
+
+      const commitsByPath = {
+        '.': [
+          {
+            sha: 'new456',
+            message: 'build: enable FEATURE_ADD_COMPONENTS flag in production',
+            files: [],
+          } as Commit,
+        ],
+      };
+
+      await plugin.preconfigure({}, commitsByPath, {});
+
+      const historical = commitsByPath['.'].find(c => c.sha === 'merge270') as
+        | (Commit & {
+            type?: string;
+            bareMessage?: string;
+            pullRequest?: {number: number};
+          })
+        | undefined;
+      assert.ok(historical);
+      assert.strictEqual(historical?.type, 'feat');
+      assert.strictEqual(
+        historical?.bareMessage,
+        'feat(entity-explorer): add selected component to current entity'
+      );
+      assert.strictEqual(historical?.pullRequest?.number, 270);
+    });
   });
 });

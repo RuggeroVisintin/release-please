@@ -131,10 +131,10 @@ export class FeatureFlagPlugin extends ManifestPlugin {
    */
   private injectHistoricalCommitsForNewlyEnabledFlags(
     commitsByPath: Record<string, Commit[]>
-  ): void {
+  ): Promise<void> {
     const newlyEnabledFlags = this.getNewlyEnabledFlags();
     if (newlyEnabledFlags.length === 0) {
-      return;
+      return Promise.resolve();
     }
 
     console.log(
@@ -142,38 +142,46 @@ export class FeatureFlagPlugin extends ManifestPlugin {
     );
 
     const historicalCommits = this.findHistoricalCommits(newlyEnabledFlags);
-    if (historicalCommits.length === 0) {
-      return;
-    }
 
-    const existingShas = new Set<string>();
-    for (const commits of Object.values(commitsByPath)) {
-      for (const commit of commits) {
-        if (commit.sha) {
-          existingShas.add(commit.sha);
+    return this.findHistoricalOverridePullRequestCommits(
+      newlyEnabledFlags
+    ).then(overrideCommits => {
+      const allHistoricalCommits = [...historicalCommits, ...overrideCommits];
+      if (allHistoricalCommits.length === 0) {
+        return;
+      }
+
+      const existingShas = new Set<string>();
+      for (const commits of Object.values(commitsByPath)) {
+        for (const commit of commits) {
+          if (commit.sha) {
+            existingShas.add(commit.sha);
+          }
         }
       }
-    }
 
-    const dedupedHistoricalCommits = historicalCommits.filter(commit => {
-      return !!commit.sha && !existingShas.has(commit.sha);
+      const dedupedHistoricalCommits = allHistoricalCommits.filter(commit => {
+        return !!commit.sha && !existingShas.has(commit.sha);
+      });
+
+      if (dedupedHistoricalCommits.length === 0) {
+        return;
+      }
+
+      const targetPath = commitsByPath['.']
+        ? '.'
+        : Object.keys(commitsByPath)[0];
+
+      if (!targetPath) {
+        return;
+      }
+
+      commitsByPath[targetPath].push(...dedupedHistoricalCommits);
+
+      console.log(
+        `[FeatureFlagPlugin] Injected ${dedupedHistoricalCommits.length} historical commits into path ${targetPath}`
+      );
     });
-
-    if (dedupedHistoricalCommits.length === 0) {
-      return;
-    }
-
-    const targetPath = commitsByPath['.'] ? '.' : Object.keys(commitsByPath)[0];
-
-    if (!targetPath) {
-      return;
-    }
-
-    commitsByPath[targetPath].push(...dedupedHistoricalCommits);
-
-    console.log(
-      `[FeatureFlagPlugin] Injected ${dedupedHistoricalCommits.length} historical commits into path ${targetPath}`
-    );
   }
 
   /**
@@ -184,7 +192,7 @@ export class FeatureFlagPlugin extends ManifestPlugin {
     commitsByPath: Record<string, Commit[]>,
     _releasesByPath: Record<string, any>
   ): Promise<Record<string, any>> {
-    this.injectHistoricalCommitsForNewlyEnabledFlags(commitsByPath);
+    await this.injectHistoricalCommitsForNewlyEnabledFlags(commitsByPath);
 
     // Filter commits for each path IN PLACE
     for (const [path, commits] of Object.entries(commitsByPath)) {
@@ -284,6 +292,99 @@ export class FeatureFlagPlugin extends ManifestPlugin {
           error
         );
       }
+    }
+
+    return commits;
+  }
+
+  /**
+   * Find historical merged PR commits whose override block contains newly enabled flags.
+   */
+  private async findHistoricalOverridePullRequestCommits(
+    flags: string[]
+  ): Promise<Commit[]> {
+    const latestTag = this.getLatestTag();
+    if (!latestTag) {
+      return [];
+    }
+
+    const flagSet = new Set(flags);
+    const commitsSinceLatestTag = new Set<string>();
+
+    try {
+      const revListOutput = execSync(`git rev-list ${latestTag}..HEAD`, {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+
+      for (const sha of revListOutput
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)) {
+        commitsSinceLatestTag.add(sha);
+      }
+    } catch {
+      return [];
+    }
+
+    const commits: Commit[] = [];
+
+    try {
+      for await (const pr of this.github.pullRequestIterator(
+        this.targetBranch,
+        'MERGED',
+        500,
+        false
+      )) {
+        const mergeSha = pr.mergeCommitOid || pr.sha;
+        if (!mergeSha || !commitsSinceLatestTag.has(mergeSha)) {
+          continue;
+        }
+
+        const overrideMessage = this.extractOverrideMessage(pr.body || '');
+        if (!overrideMessage) {
+          continue;
+        }
+
+        const flagMatch = overrideMessage.match(/Feature-Flag:\s*(\w+)/i);
+        if (!flagMatch || !flagSet.has(flagMatch[1])) {
+          continue;
+        }
+
+        const effectiveSubject = overrideMessage
+          .split('\n')
+          .find(line => line.trim().length > 0)
+          ?.trim();
+
+        if (!effectiveSubject) {
+          continue;
+        }
+
+        commits.push({
+          sha: mergeSha,
+          message: overrideMessage,
+          files: pr.files || [],
+          pullRequest: {
+            ...pr,
+            sha: mergeSha,
+          },
+          type: this.extractCommitType(effectiveSubject),
+          scope: this.extractCommitScope(effectiveSubject),
+          bareMessage: effectiveSubject,
+          notes: [],
+          references: [],
+          breaking: false,
+        } as Commit);
+
+        console.log(
+          `[FeatureFlagPlugin] Found historical PR override commit ${mergeSha.substring(
+            0,
+            7
+          )} for ${flagMatch[1]} (PR #${pr.number})`
+        );
+      }
+    } catch {
+      return commits;
     }
 
     return commits;
