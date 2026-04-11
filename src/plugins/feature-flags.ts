@@ -378,48 +378,56 @@ export class FeatureFlagPlugin extends ManifestPlugin {
       return this.findMergedPullRequestsWithFeatureFlagBodyFallback(maxResults);
     }
 
-    const query = `repo:${owner}/${repo} is:pr is:merged base:${this.targetBranch} in:body \"Feature-Flag:\"`;
+    const query = `repo:${owner}/${repo} is:pr is:merged base:${this.targetBranch} in:body "Feature-Flag:"`;
 
     const prs: any[] = [];
     let page = 1;
     const perPage = 100;
 
-    while (prs.length < maxResults) {
-      const response = await octokit.request('GET /search/issues', {
-        q: query,
-        per_page: perPage,
-        page,
-        sort: 'updated',
-        order: 'desc',
-      });
+    try {
+      while (prs.length < maxResults) {
+        const response = await octokit.request('GET /search/issues', {
+          q: query,
+          per_page: perPage,
+          page,
+          sort: 'updated',
+          order: 'desc',
+        });
 
-      const items = response?.data?.items || [];
-      if (items.length === 0) {
-        break;
-      }
-
-      for (const item of items) {
-        if (prs.length >= maxResults) {
+        const items = response?.data?.items || [];
+        if (items.length === 0) {
           break;
         }
 
-        const number = item?.number;
-        if (!number) {
-          continue;
+        for (const item of items) {
+          if (prs.length >= maxResults) {
+            break;
+          }
+
+          const number = item?.number;
+          if (!number) {
+            continue;
+          }
+
+          try {
+            const pr = await this.github.getPullRequest(number);
+            prs.push(pr);
+          } catch {
+            // Skip PRs that cannot be fetched for any reason.
+          }
         }
 
-        try {
-          const pr = await this.github.getPullRequest(number);
-          prs.push(pr);
-        } catch {
-          // Skip PRs that cannot be fetched for any reason.
-        }
+        page++;
       }
 
-      page++;
+      return prs;
+    } catch (error) {
+      console.warn(
+        '[FeatureFlagPlugin] Search API failed, falling back to merged PR iterator:',
+        error
+      );
+      return this.findMergedPullRequestsWithFeatureFlagBodyFallback(maxResults);
     }
-
-    return prs;
   }
 
   /**

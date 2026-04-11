@@ -464,5 +464,77 @@ END_COMMIT_OVERRIDE`,
       );
       assert.strictEqual(historical?.pullRequest?.number, 270);
     });
+
+    it('falls back to merged PR iterator when search API fails', async () => {
+      process.env.FEATURE_FLAG_FILE = '.env.production';
+
+      execSyncStub.callsFake((command: string) => {
+        if (command.includes('git show HEAD:.env.production')) {
+          return 'FEATURE_ADD_COMPONENTS=true\n';
+        }
+        if (command.includes('git describe --tags --abbrev=0')) {
+          return 'sparkenginewebeditor-v0.0.15\n';
+        }
+        if (
+          command.includes(
+            'git show sparkenginewebeditor-v0.0.15:.env.production'
+          )
+        ) {
+          return 'FEATURE_ADD_COMPONENTS=false\n';
+        }
+        if (
+          command.includes('git log sparkenginewebeditor-v0.0.15') &&
+          command.includes('Feature-Flag: FEATURE_ADD_COMPONENTS')
+        ) {
+          return '';
+        }
+        throw new Error(`Unexpected command: ${command}`);
+      });
+
+      const plugin = new FeatureFlagPlugin({} as any, 'main', {});
+      (plugin as any).github = {
+        repository: {owner: 'RuggeroVisintin', repo: 'SparkEngineWebEditor'},
+        octokit: {
+          request: async () => {
+            throw new Error('search failed');
+          },
+        },
+        pullRequestIterator: async function* () {
+          yield {
+            number: 271,
+            baseBranchName: 'main',
+            headBranchName: 'feat/fallback',
+            mergeCommitOid: 'merge271',
+            title: 'feat: fallback commit',
+            body: `BEGIN_COMMIT_OVERRIDE
+feat: fallback override commit
+
+Feature-Flag: FEATURE_ADD_COMPONENTS
+END_COMMIT_OVERRIDE`,
+            labels: [],
+            files: [],
+          };
+        },
+      };
+
+      const commitsByPath = {
+        '.': [
+          {
+            sha: 'new456',
+            message: 'build: enable FEATURE_ADD_COMPONENTS flag in production',
+            files: [],
+          } as Commit,
+        ],
+      };
+
+      await plugin.preconfigure({}, commitsByPath, {});
+
+      const historical = commitsByPath['.'].find(c => c.sha === 'merge271') as
+        | (Commit & {type?: string; pullRequest?: {number: number}})
+        | undefined;
+      assert.ok(historical);
+      assert.strictEqual(historical?.type, 'feat');
+      assert.strictEqual(historical?.pullRequest?.number, 271);
+    });
   });
 });
