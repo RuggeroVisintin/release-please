@@ -309,8 +309,14 @@ export class FeatureFlagPlugin extends ManifestPlugin {
     try {
       const prs = await this.findMergedPullRequestsWithFeatureFlagBody(500);
       for (const pr of prs) {
-        const mergeSha = pr.mergeCommitOid || pr.sha;
+        const mergeSha =
+          pr.mergeCommitOid ||
+          pr.sha ||
+          (await this.resolveMergeShaFromPullNumber(pr.number));
         if (!mergeSha) {
+          console.log(
+            `[FeatureFlagPlugin] Skipping PR #${pr.number}: merge SHA is unavailable`
+          );
           continue;
         }
 
@@ -361,6 +367,50 @@ export class FeatureFlagPlugin extends ManifestPlugin {
     }
 
     return commits;
+  }
+
+  /**
+   * Resolve merge SHA for a pull request number when it is not present on PullRequest.
+   */
+  private async resolveMergeShaFromPullNumber(
+    pullNumber: number | undefined
+  ): Promise<string | undefined> {
+    if (!pullNumber) {
+      return undefined;
+    }
+
+    const github = this.github as any;
+    const owner = github?.repository?.owner;
+    const repo = github?.repository?.repo;
+    const octokit = github?.octokit;
+
+    if (!owner || !repo || !octokit) {
+      return undefined;
+    }
+
+    try {
+      const response = await octokit.request(
+        'GET /repos/{owner}/{repo}/pulls/{pull_number}',
+        {
+          owner,
+          repo,
+          pull_number: pullNumber,
+        }
+      );
+
+      const mergeSha = response?.data?.merge_commit_sha as string | undefined;
+      if (mergeSha) {
+        console.log(
+          `[FeatureFlagPlugin] Resolved merge SHA for PR #${pullNumber}: ${mergeSha.substring(
+            0,
+            7
+          )}`
+        );
+      }
+      return mergeSha;
+    } catch {
+      return undefined;
+    }
   }
 
   /**

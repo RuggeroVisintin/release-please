@@ -555,5 +555,103 @@ END_COMMIT_OVERRIDE`,
         warnStub.restore();
       }
     });
+
+    it('injects PR override commits when getPullRequest has no merge sha', async () => {
+      process.env.FEATURE_FLAG_FILE = '.env.production';
+
+      execSyncStub.callsFake((command: string) => {
+        if (command.includes('git show HEAD:.env.production')) {
+          return 'FEATURE_ADD_COMPONENTS=true\n';
+        }
+        if (command.includes('git describe --tags --abbrev=0')) {
+          return 'sparkenginewebeditor-v0.0.15\n';
+        }
+        if (
+          command.includes(
+            'git show sparkenginewebeditor-v0.0.15:.env.production'
+          )
+        ) {
+          return 'FEATURE_ADD_COMPONENTS=false\n';
+        }
+        if (
+          command.includes('git log sparkenginewebeditor-v0.0.15') &&
+          command.includes('Feature-Flag: FEATURE_ADD_COMPONENTS')
+        ) {
+          return '';
+        }
+        throw new Error(`Unexpected command: ${command}`);
+      });
+
+      let searchCalls = 0;
+      const plugin = new FeatureFlagPlugin({} as any, 'main', {});
+      (plugin as any).github = {
+        repository: {owner: 'RuggeroVisintin', repo: 'SparkEngineWebEditor'},
+        octokit: {
+          request: async (route: string, params: any) => {
+            if (route === 'GET /search/issues') {
+              searchCalls++;
+              return {
+                data: {
+                  items: searchCalls === 1 ? [{number: 272}] : [],
+                },
+              };
+            }
+
+            if (route === 'GET /repos/{owner}/{repo}/pulls/{pull_number}') {
+              return {
+                data: {
+                  merge_commit_sha: `merge${params.pull_number}`,
+                },
+              };
+            }
+
+            throw new Error(`Unexpected route: ${route}`);
+          },
+        },
+        // Mirrors current github-api behavior where merge sha is omitted.
+        getPullRequest: async () => ({
+          number: 272,
+          baseBranchName: 'main',
+          headBranchName: 'feat/entity',
+          title:
+            'feat(entity-explorer): add selected component to current entity',
+          body: `BEGIN_COMMIT_OVERRIDE
+feat(entity-explorer): add selected component to current entity
+
+Feature-Flag: FEATURE_ADD_COMPONENTS
+END_COMMIT_OVERRIDE`,
+          labels: [],
+          files: [],
+        }),
+      };
+
+      const commitsByPath = {
+        '.': [
+          {
+            sha: 'new456',
+            message: 'build: enable FEATURE_ADD_COMPONENTS flag in production',
+            files: [],
+          } as Commit,
+        ],
+      };
+
+      await plugin.preconfigure({}, commitsByPath, {});
+
+      const historical = commitsByPath['.'].find(c => c.sha === 'merge272') as
+        | (Commit & {
+            type?: string;
+            bareMessage?: string;
+            pullRequest?: {number: number};
+          })
+        | undefined;
+
+      assert.ok(historical);
+      assert.strictEqual(historical?.type, 'feat');
+      assert.strictEqual(
+        historical?.bareMessage,
+        'feat(entity-explorer): add selected component to current entity'
+      );
+      assert.strictEqual(historical?.pullRequest?.number, 272);
+    });
   });
 });
