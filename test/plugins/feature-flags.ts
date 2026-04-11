@@ -14,20 +14,25 @@
 
 import {describe, it, beforeEach, afterEach} from 'mocha';
 import * as assert from 'assert';
+import * as sinon from 'sinon';
+import * as childProcess from 'child_process';
 import {FeatureFlagPlugin} from '../../src/plugins/feature-flags';
 import {Commit} from '../../src/commit';
 
 describe('FeatureFlagPlugin', () => {
   let originalEnv: NodeJS.ProcessEnv;
+  let execSyncStub: sinon.SinonStub;
 
   beforeEach(() => {
     // Save original environment
     originalEnv = {...process.env};
+    execSyncStub = sinon.stub(childProcess, 'execSync');
   });
 
   afterEach(() => {
     // Restore original environment
     process.env = originalEnv;
+    execSyncStub.restore();
   });
 
   describe('commit filtering', () => {
@@ -40,12 +45,14 @@ describe('FeatureFlagPlugin', () => {
       const commits: Commit[] = [
         {
           sha: 'abc123',
-          message: 'feat: enabled feature\n\nFeature-Flag: FEATURE_TEST_ENABLED',
+          message:
+            'feat: enabled feature\n\nFeature-Flag: FEATURE_TEST_ENABLED',
           files: [],
         } as Commit,
         {
           sha: 'def456',
-          message: 'feat: disabled feature\n\nFeature-Flag: FEATURE_TEST_DISABLED',
+          message:
+            'feat: disabled feature\n\nFeature-Flag: FEATURE_TEST_DISABLED',
           files: [],
         } as Commit,
         {
@@ -176,7 +183,8 @@ END_COMMIT_OVERRIDE`,
       // Should keep enabled, filter disabled
       assert.strictEqual(commitsByPath['.'].length, 1);
       assert.strictEqual(commitsByPath['.'][0].sha, 'abc');
-    });  });
+    });
+  });
 
   describe('environment variable handling', () => {
     it('should only load FEATURE_* environment variables', async () => {
@@ -232,6 +240,90 @@ END_COMMIT_OVERRIDE`,
       // Only FEATURE_TRUE should be included
       assert.strictEqual(commitsByPath['.'].length, 1);
       assert.strictEqual(commitsByPath['.'][0].sha, 'abc');
+    });
+  });
+
+  describe('historical catch-up behavior', () => {
+    it('includes historical commits when a feature flag was newly enabled', async () => {
+      process.env.FEATURE_FLAG_FILE = '.env.production';
+
+      execSyncStub.callsFake((command: string) => {
+        if (command.includes('git show HEAD:.env.production')) {
+          return 'FEATURE_ADD_COMPONENTS=true\n';
+        }
+        if (command.includes('git describe --tags --abbrev=0')) {
+          return 'sparkenginewebeditor-v0.0.15\n';
+        }
+        if (
+          command.includes(
+            'git show sparkenginewebeditor-v0.0.15:.env.production'
+          )
+        ) {
+          return 'FEATURE_ADD_COMPONENTS=false\n';
+        }
+        if (
+          command.includes('git log sparkenginewebeditor-v0.0.15') &&
+          command.includes('Feature-Flag: FEATURE_ADD_COMPONENTS')
+        ) {
+          return 'old123|feat: add component system|Feature-Flag: FEATURE_ADD_COMPONENTS|Author|author@example.com\n';
+        }
+        throw new Error(`Unexpected command: ${command}`);
+      });
+
+      const plugin = new FeatureFlagPlugin({} as any, 'main', {});
+
+      const commitsByPath = {
+        '.': [
+          {
+            sha: 'new456',
+            message: 'build: enable FEATURE_ADD_COMPONENTS flag in production',
+            files: [],
+          } as Commit,
+        ],
+      };
+
+      await plugin.preconfigure({}, commitsByPath, {});
+
+      assert.strictEqual(commitsByPath['.'].length, 2);
+      assert.ok(commitsByPath['.'].some(commit => commit.sha === 'old123'));
+    });
+
+    it('does not include historical commits when flag was already enabled at last release', async () => {
+      process.env.FEATURE_FLAG_FILE = '.env.production';
+
+      execSyncStub.callsFake((command: string) => {
+        if (command.includes('git show HEAD:.env.production')) {
+          return 'FEATURE_ADD_COMPONENTS=true\n';
+        }
+        if (command.includes('git describe --tags --abbrev=0')) {
+          return 'sparkenginewebeditor-v0.0.15\n';
+        }
+        if (
+          command.includes(
+            'git show sparkenginewebeditor-v0.0.15:.env.production'
+          )
+        ) {
+          return 'FEATURE_ADD_COMPONENTS=true\n';
+        }
+        throw new Error(`Unexpected command: ${command}`);
+      });
+
+      const plugin = new FeatureFlagPlugin({} as any, 'main', {});
+
+      const commitsByPath = {
+        '.': [
+          {
+            sha: 'new456',
+            message: 'build: enable FEATURE_ADD_COMPONENTS flag in production',
+            files: [],
+          } as Commit,
+        ],
+      };
+
+      await plugin.preconfigure({}, commitsByPath, {});
+
+      assert.strictEqual(commitsByPath['.'].length, 1);
+      assert.strictEqual(commitsByPath['.'][0].sha, 'new456');
     });
   });
 });
