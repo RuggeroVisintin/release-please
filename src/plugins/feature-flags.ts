@@ -384,6 +384,10 @@ export class FeatureFlagPlugin extends ManifestPlugin {
     let page = 1;
     const perPage = 100;
 
+    console.log(
+      `[FeatureFlagPlugin] Searching merged PRs with Feature-Flag overrides (branch=${this.targetBranch}, maxResults=${maxResults})`
+    );
+
     try {
       while (prs.length < maxResults) {
         const response = await octokit.request('GET /search/issues', {
@@ -395,6 +399,9 @@ export class FeatureFlagPlugin extends ManifestPlugin {
         });
 
         const items = response?.data?.items || [];
+        console.log(
+          `[FeatureFlagPlugin] Search page ${page}: ${items.length} candidate PRs`
+        );
         if (items.length === 0) {
           break;
         }
@@ -419,6 +426,10 @@ export class FeatureFlagPlugin extends ManifestPlugin {
 
         page++;
       }
+
+      console.log(
+        `[FeatureFlagPlugin] Search API returned ${prs.length} merged PRs with Feature-Flag in body`
+      );
 
       return prs;
     } catch (error) {
@@ -448,6 +459,10 @@ export class FeatureFlagPlugin extends ManifestPlugin {
         prs.push(pr);
       }
     }
+
+    console.log(
+      `[FeatureFlagPlugin] Fallback iterator returned ${prs.length} merged PRs with Feature-Flag in body`
+    );
 
     return prs;
   }

@@ -467,6 +467,8 @@ END_COMMIT_OVERRIDE`,
 
     it('falls back to merged PR iterator when search API fails', async () => {
       process.env.FEATURE_FLAG_FILE = '.env.production';
+      const logStub = sinon.stub(console, 'log');
+      const warnStub = sinon.stub(console, 'warn');
 
       execSyncStub.callsFake((command: string) => {
         if (command.includes('git show HEAD:.env.production')) {
@@ -527,14 +529,31 @@ END_COMMIT_OVERRIDE`,
         ],
       };
 
-      await plugin.preconfigure({}, commitsByPath, {});
+      try {
+        await plugin.preconfigure({}, commitsByPath, {});
 
-      const historical = commitsByPath['.'].find(c => c.sha === 'merge271') as
-        | (Commit & {type?: string; pullRequest?: {number: number}})
-        | undefined;
-      assert.ok(historical);
-      assert.strictEqual(historical?.type, 'feat');
-      assert.strictEqual(historical?.pullRequest?.number, 271);
+        const historical = commitsByPath['.'].find(
+          c => c.sha === 'merge271'
+        ) as
+          | (Commit & {type?: string; pullRequest?: {number: number}})
+          | undefined;
+        assert.ok(historical);
+        assert.strictEqual(historical?.type, 'feat');
+        assert.strictEqual(historical?.pullRequest?.number, 271);
+        assert.ok(
+          warnStub.calledWithMatch(
+            '[FeatureFlagPlugin] Search API failed, falling back to merged PR iterator:'
+          )
+        );
+        assert.ok(
+          logStub.calledWithMatch(
+            '[FeatureFlagPlugin] Fallback iterator returned 1 merged PRs with Feature-Flag in body'
+          )
+        );
+      } finally {
+        logStub.restore();
+        warnStub.restore();
+      }
     });
   });
 });
