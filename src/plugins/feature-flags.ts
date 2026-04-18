@@ -548,7 +548,8 @@ export class FeatureFlagPlugin extends ManifestPlugin {
     }
 
     const flag = flagMatch[1];
-    const isEnabled = this.enabledFlags.has(flag);
+    const isEnabled =
+      this.enabledFlags.has(flag) || this.enabledFlags.has(`FEATURE_${flag}`);
 
     console.log(
       `[FeatureFlagPlugin] Commit ${commit.sha?.substring(

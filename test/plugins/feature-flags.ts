@@ -187,6 +187,26 @@ END_COMMIT_OVERRIDE`,
   });
 
   describe('environment variable handling', () => {
+    it('should include commits when flag is specified without FEATURE_ prefix', async () => {
+      process.env.FEATURE_ENABLED = 'true';
+
+      const plugin = new FeatureFlagPlugin({} as any, 'main', {});
+
+      const commits: Commit[] = [
+        {
+          sha: 'abc',
+          message: 'feat: unprefixed flag\n\nFeature-Flag: ENABLED',
+          files: [],
+        } as Commit,
+      ];
+
+      const commitsByPath = {'.': commits};
+      await plugin.preconfigure({}, commitsByPath, {});
+
+      assert.strictEqual(commitsByPath['.'].length, 1);
+      assert.strictEqual(commitsByPath['.'][0].sha, 'abc');
+    });
+
     it('should only load FEATURE_* environment variables', async () => {
       process.env.FEATURE_ENABLED = 'true';
       process.env.NOT_A_FEATURE = 'true';
